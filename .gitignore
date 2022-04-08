@@ -1,0 +1,9 @@
+*.o
+*.cmd
+*.mod
+*.mod.c
+*~
+*.ko
+Module.symvers
+modules.order
+mkfs.sidongfs
