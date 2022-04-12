@@ -5,6 +5,8 @@
 #include <errno.h>
 #include <unistd.h>
 
+#include "sidongfs.h"
+
 #define SIDONGFS_BLOCK_SIZE 1024
 
 int main(int argc, char** argv) {
@@ -18,12 +20,22 @@ int main(int argc, char** argv) {
 	fd = open(argv[1], O_RDWR);
 	if (fd < 0)
 		perror("Error :");
-	printf("%d %s\n", argc, argv[1]);
 
-	lseek(fd, SEEK_SET, SIDONGFS_BLOCK_SIZE);	
-	write(fd, "sidongfs", 8);
+	got = lseek(fd, SIDONGFS_BLOCK_SIZE, SEEK_SET);
+	printf("lseek returns %d \n", got);	
 
-	got = read(fd, buf, 10);
-	printf("%d %s\n", got, buf);
+	struct sidong_super_block sb;
+	sprintf(sb.magic, "hello sidong!");
+	sb.version=17;
+	got = write(fd, &sb, sizeof(sb));
+	close(fd);
+	
+	fd = open(argv[1], O_RDWR);
+	lseek(fd, SIDONGFS_BLOCK_SIZE, SEEK_SET);
+	printf("lseek returns %d \n", got);		
+	got = read(fd, &sb, sizeof(sb));
+	printf("%d asdf %s\n", got, sb.magic);
+
+	close(fd);
 	return 0;
 }
