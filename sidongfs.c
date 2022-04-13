@@ -79,6 +79,7 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 	struct sidong_super_block *sb;
 	struct sidong_fs_sb_info *sbi;
 	struct buffer_head *bh;
+	struct inode *root_inode;
 
 	printk(KERN_INFO "sidongfs fill super\n");
 
@@ -93,13 +94,15 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 
 	sb = (struct sidong_super_block *) bh->b_data;
 	printk(KERN_INFO "magic: %s version: %d\n", sb->magic, sb->version);
-
-
 	sbi = kzalloc(sizeof(struct sidong_fs_sb_info), GFP_KERNEL);
+
+	root_inode = iget_locked(s, SIDONGFS_ROOT_INO);
+	root_inode->i_mode = S_IFDIR;
 
 	s->s_op = &sidong_fs_sops;
 	s->s_time_min = 0;
 	s->s_time_max = U32_MAX;
+	s->s_root = d_make_root(root_inode);
 
 	brelse(bh);
 	return 0;
@@ -117,6 +120,7 @@ static struct file_system_type sidong_fs_type = {
 	.mount		= sidongfs_mount,
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
+	.init_fs_context    = NULL,
 };
 MODULE_ALIAS_FS("sidongfs");
 
@@ -124,7 +128,7 @@ MODULE_ALIAS_FS("sidongfs");
 int __init sidongfs_module_init(void)
 {
 	int err;
-	printk("Sidongfs Module!\n");	
+	printk("Sidongfs Module!\n");
 	err = register_filesystem(&sidong_fs_type);
 	if (err)
 		goto out;

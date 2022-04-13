@@ -3,6 +3,7 @@
 
 #include <linux/types.h>
 
+#define SIDONGFS_ROOT_INO 1
 
 struct sidong_super_block {
 	char magic[16];
