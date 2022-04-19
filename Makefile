@@ -1,5 +1,7 @@
 obj-m := sidongfs.o
 
+sidongfs-objs := inode.o dir.o
+
 KERNEL_DIR := /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 

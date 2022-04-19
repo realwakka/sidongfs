@@ -9,7 +9,7 @@
 #include "sidongfs.h"
 
 struct sidong_fs_sb_info {
-
+	struct buffer_head *sbh;
 };
 
 struct sidong_fs_inode_info {
@@ -49,8 +49,9 @@ static void sidong_fs_evict_inode(struct inode *inode)
 {
 	printk(KERN_INFO "sidong fs evict inode\n");
 	truncate_inode_pages_final(&inode->i_data);
-	inode->i_size = 0;
+
 	if (!inode->i_nlink) {
+		inode->i_size = 0;		
 		// sidong_fs_truncate(inode);
 	}
 	
@@ -64,7 +65,11 @@ static void sidong_fs_evict_inode(struct inode *inode)
 static void sidong_fs_put_super(struct super_block *sb)
 {
 	struct sidong_fs_sb_info *sbi = sidong_fs_sb(sb);
+
+	printk("sidongfs_put_super!!!\n");
 	sb->s_fs_info = NULL;
+
+	brelse(sbi->sbh);
 	kfree(sbi);	
 }
 
@@ -119,9 +124,11 @@ static struct inode *sidongfs_iget(struct super_block *sb, unsigned long ino)
 	inode->i_mtime.tv_nsec = 0;
 	inode->i_atime.tv_nsec = 0;
 	inode->i_ctime.tv_nsec = 0;
+	inode->i_blocks = 0;
 
-	// sidongfs_set_inode(inode, old_decode_dev(raw_inode->i_zone[0]));
+	sidongfs_set_inode(inode, sidongfs_inode->i_mode);
 	brelse(bh);
+	unlock_new_inode(inode);	
 	return inode;
 }
 
@@ -143,12 +150,17 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 		return -EINVAL;
 	}
 
-	sb = (struct sidongfs_super_block *) bh->b_data;
-	printk(KERN_INFO "magic: %s version: %u\n", sb->magic, sb->version);
 	sbi = kzalloc(sizeof(struct sidong_fs_sb_info), GFP_KERNEL);
 	if (!sbi)
 		return -ENOMEM;
-	
+
+
+	sb = (struct sidongfs_super_block *) bh->b_data;
+
+	sbi->sbh = bh;
+
+	s->s_maxbytes = 1024;
+	s->s_magic = sb->version;
 	s->s_fs_info = sbi;
 	s->s_op = &sidong_fs_sops;
 	s->s_time_min = 0;
@@ -165,7 +177,6 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 		printk("sidongfs: get root inode failed\n");
 	}
 
-	brelse(bh);
 	return 0;
 }
 
