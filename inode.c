@@ -8,63 +8,86 @@
 
 #include "sidongfs.h"
 
-struct sidong_fs_sb_info {
+struct sidongfs_sb_info {
 	struct buffer_head *sbh;
 };
 
-struct sidong_fs_inode_info {
+struct sidongfs_inode_info {
 	struct inode vfs_inode;
 };
 
-static inline struct sidong_fs_inode_info *sidong_fs_i(struct inode *inode)
+static inline struct sidongfs_inode_info *sidongfs_i(struct inode *inode)
 {
-	return container_of(inode, struct sidong_fs_inode_info, vfs_inode);
+	return container_of(inode, struct sidongfs_inode_info, vfs_inode);
 }
 
-static inline struct sidong_fs_sb_info *sidong_fs_sb(struct super_block *sb)
+static inline struct sidongfs_sb_info *sidongfs_sb(struct super_block *sb)
 {
 	return sb->s_fs_info;
 }
 
-static struct inode *sidong_fs_alloc_inode(struct super_block *sb)
+static struct kmem_cache *sidongfs_inode_cachep;
+
+static struct inode *sidongfs_alloc_inode(struct super_block *sb)
 {
-	struct sidong_fs_inode_info *inode_info;
-	inode_info = kzalloc(sizeof(struct sidong_fs_inode_info), GFP_KERNEL);	
+	struct sidongfs_inode_info *inode_info;
+	// we use kmem_cache_alloc() because of kill_block_super()
+	inode_info = kmem_cache_alloc(sidongfs_inode_cachep, GFP_KERNEL);
+	// inode_info = kzalloc(sizeof(struct sidongfs_inode_info), GFP_KERNEL);	
 	if (!inode_info)
 		return NULL;
 	return &inode_info->vfs_inode;
 }
 
-static void sidong_fs_free_inode(struct inode *inode)
+static void sidongfs_free_inode(struct inode *inode)
 {
-	kfree(sidong_fs_i(inode));
+	kmem_cache_free(sidongfs_inode_cachep, sidongfs_i(inode));	
+	// kfree(sidongfs_i(inode));
 }
 
-static int sidong_fs_write_inode(struct inode *inode, struct writeback_control *wbc)
+static void init_once(void *foo)
+{
+	struct sidongfs_inode_info *ei = (struct sidongfs_inode_info *) foo;
+	inode_init_once(&ei->vfs_inode);
+}
+
+static int __init init_inodecache(void)
+{
+	sidongfs_inode_cachep = kmem_cache_create("sidongfs_inode_cache",
+											  sizeof(struct sidongfs_inode_info),
+											  0, (SLAB_RECLAIM_ACCOUNT|
+												  SLAB_MEM_SPREAD|SLAB_ACCOUNT),
+											  init_once);
+	if (sidongfs_inode_cachep == NULL)
+		return -ENOMEM;
+	return 0;
+}
+
+static int sidongfs_write_inode(struct inode *inode, struct writeback_control *wbc)
 {
 	return 0;
 }
 
-static void sidong_fs_evict_inode(struct inode *inode)
+static void sidongfs_evict_inode(struct inode *inode)
 {
 	printk(KERN_INFO "sidong fs evict inode\n");
 	truncate_inode_pages_final(&inode->i_data);
 
 	if (!inode->i_nlink) {
 		inode->i_size = 0;		
-		// sidong_fs_truncate(inode);
+		// sidongfs_truncate(inode);
 	}
 	
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
 
 	if (!inode->i_nlink)
-		sidong_fs_free_inode(inode);	
+		sidongfs_free_inode(inode);	
 }
 
-static void sidong_fs_put_super(struct super_block *sb)
+static void sidongfs_put_super(struct super_block *sb)
 {
-	struct sidong_fs_sb_info *sbi = sidong_fs_sb(sb);
+	struct sidongfs_sb_info *sbi = sidongfs_sb(sb);
 
 	printk("sidongfs_put_super!!!\n");
 	sb->s_fs_info = NULL;
@@ -73,14 +96,14 @@ static void sidong_fs_put_super(struct super_block *sb)
 	kfree(sbi);	
 }
 
-static const struct super_operations sidong_fs_sops = {
-	.alloc_inode	= sidong_fs_alloc_inode,
-	.free_inode	= sidong_fs_free_inode,
-	.write_inode	= sidong_fs_write_inode,
-	.evict_inode	= sidong_fs_evict_inode,
-	.put_super	= sidong_fs_put_super,
-	/* .statfs		= sidong_fs_statfs, */
-	/* .remount_fs	= sidong_fs_remount, */
+static const struct super_operations sidongfs_sops = {
+	.alloc_inode	= sidongfs_alloc_inode,
+	.free_inode	= sidongfs_free_inode,
+	.write_inode	= sidongfs_write_inode,
+	.evict_inode	= sidongfs_evict_inode,
+	.put_super	= sidongfs_put_super,
+	/* .statfs		= sidongfs_statfs, */
+	/* .remount_fs	= sidongfs_remount, */
 };
 
 void sidongfs_set_inode(struct inode *inode, dev_t rdev)
@@ -128,14 +151,14 @@ static struct inode *sidongfs_iget(struct super_block *sb, unsigned long ino)
 
 	sidongfs_set_inode(inode, sidongfs_inode->i_mode);
 	brelse(bh);
-	unlock_new_inode(inode);	
+	unlock_new_inode(inode);
 	return inode;
 }
 
 static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 {
 	struct sidongfs_super_block *sb;
-	struct sidong_fs_sb_info *sbi;
+	struct sidongfs_sb_info *sbi;
 	struct buffer_head *bh;
 	struct inode *root_inode;
 
@@ -150,10 +173,10 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 		return -EINVAL;
 	}
 
-	sbi = kzalloc(sizeof(struct sidong_fs_sb_info), GFP_KERNEL);
+	sbi = kzalloc(sizeof(struct sidongfs_sb_info), GFP_KERNEL);
 	if (!sbi)
 		return -ENOMEM;
-
+	s->s_fs_info = sbi;
 
 	sb = (struct sidongfs_super_block *) bh->b_data;
 
@@ -161,11 +184,9 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 
 	s->s_maxbytes = 1024;
 	s->s_magic = sb->version;
-	s->s_fs_info = sbi;
-	s->s_op = &sidong_fs_sops;
+	s->s_op = &sidongfs_sops;
 	s->s_time_min = 0;
 	s->s_time_max = U32_MAX;
-
 	root_inode = sidongfs_iget(s, SIDONGFS_ROOT_INO);
 	if (IS_ERR(root_inode)) {
 		printk("sidongfs: sidongfs_iget failed\n");
@@ -186,7 +207,7 @@ static struct dentry *sidongfs_mount(struct file_system_type *fs_type,
 	return mount_bdev(fs_type, flags, dev_name, data, sidongfs_fill_super);
 }
 
-static struct file_system_type sidong_fs_type = {
+static struct file_system_type sidongfs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "sidongfs",
 	.mount		= sidongfs_mount,
@@ -199,8 +220,13 @@ MODULE_ALIAS_FS("sidongfs");
 int __init sidongfs_module_init(void)
 {
 	int err;
+	
 	printk("Sidongfs Module!\n");
-	err = register_filesystem(&sidong_fs_type);
+	err = init_inodecache();
+	if (err)
+		return err;
+
+	err = register_filesystem(&sidongfs_type);
 	if (err)
 		goto out;
 	return 0;
@@ -208,9 +234,20 @@ out:
 	return err;
 }
 
+static void destroy_inodecache(void)
+{
+	/*
+	 * Make sure all delayed rcu free inodes are flushed before we
+	 * destroy cache.
+	 */
+	rcu_barrier();
+	kmem_cache_destroy(sidongfs_inode_cachep);
+}
+
 void __exit sidongfs_module_cleanup(void)
 {
-	unregister_filesystem(&sidong_fs_type);
+	unregister_filesystem(&sidongfs_type);
+	destroy_inodecache();	
 	printk("Bye sidongfs Module!\n");
 }
 

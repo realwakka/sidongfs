@@ -25,7 +25,7 @@ void write_root_inode(int fd)
 	inode.i_size = 32;
 	inode.i_time = time(NULL);
 	inode.i_gid = getgid();
-	inode.i_nlinks = 2; // why?
+	inode.i_nlinks = 1; // why?
 	write(fd, &inode, sizeof(inode));	
 }
 
