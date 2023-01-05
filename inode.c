@@ -32,8 +32,7 @@ static struct inode *sidongfs_alloc_inode(struct super_block *sb)
 {
 	struct sidongfs_inode_info *inode_info;
 	// we use kmem_cache_alloc() because of kill_block_super()
-	inode_info = kmem_cache_alloc(sidongfs_inode_cachep, GFP_KERNEL);
-	// inode_info = kzalloc(sizeof(struct sidongfs_inode_info), GFP_KERNEL);	
+	inode_info = alloc_inode_sb(sb, sidongfs_inode_cachep, GFP_KERNEL);
 	if (!inode_info)
 		return NULL;
 	return &inode_info->vfs_inode;
@@ -41,7 +40,7 @@ static struct inode *sidongfs_alloc_inode(struct super_block *sb)
 
 static void sidongfs_free_inode(struct inode *inode)
 {
-	kmem_cache_free(sidongfs_inode_cachep, sidongfs_i(inode));	
+	kmem_cache_free(sidongfs_inode_cachep, sidongfs_i(inode));
 	// kfree(sidongfs_i(inode));
 }
 
@@ -65,6 +64,7 @@ static int __init init_inodecache(void)
 
 static int sidongfs_write_inode(struct inode *inode, struct writeback_control *wbc)
 {
+	printk(KERN_INFO "sidong fs write inode\n");
 	return 0;
 }
 
@@ -74,15 +74,15 @@ static void sidongfs_evict_inode(struct inode *inode)
 	truncate_inode_pages_final(&inode->i_data);
 
 	if (!inode->i_nlink) {
-		inode->i_size = 0;		
+		inode->i_size = 0;
 		// sidongfs_truncate(inode);
 	}
-	
+
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
 
 	if (!inode->i_nlink)
-		sidongfs_free_inode(inode);	
+		sidongfs_free_inode(inode);
 }
 
 static void sidongfs_put_super(struct super_block *sb)
@@ -93,7 +93,7 @@ static void sidongfs_put_super(struct super_block *sb)
 	sb->s_fs_info = NULL;
 
 	brelse(sbi->sbh);
-	kfree(sbi);	
+	kfree(sbi);
 }
 
 static const struct super_operations sidongfs_sops = {
@@ -111,7 +111,7 @@ void sidongfs_set_inode(struct inode *inode, dev_t rdev)
 	if (S_ISREG(inode->i_mode)) {
 		printk("regular file is not implemented yet.\n");
 	} else if (S_ISDIR(inode->i_mode)) {
-		printk("minix_set_inode dir node.\n");		
+		printk("sidongfs_set_inode dir node.\n");
 		inode->i_fop = &sidongfs_dir_operations;
 	} else if (S_ISLNK(inode->i_mode)) {
 		printk("link file is not implemented yet.\n");
@@ -123,7 +123,7 @@ static struct inode *sidongfs_iget(struct super_block *sb, unsigned long ino)
 {
 	struct inode *inode;
 	struct sidongfs_inode *sidongfs_inode;
-	struct sidongfs_inode *nodes;	
+	struct sidongfs_inode *nodes;
 	struct buffer_head *bh;
 
 	inode = iget_locked(sb, ino);
@@ -165,7 +165,7 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 	printk(KERN_INFO "sidongfs fill super\n");
 
 	if (!sb_set_blocksize(s, 1024)) {
-		printk(KERN_INFO "sb_set_blocksize failed\n");		
+		printk(KERN_INFO "sb_set_blocksize failed\n");
 		return -EINVAL;
 	}
 	if (!(bh = sb_bread(s, 1))) {
@@ -187,15 +187,21 @@ static int sidongfs_fill_super(struct super_block *s, void *data, int silent)
 	s->s_op = &sidongfs_sops;
 	s->s_time_min = 0;
 	s->s_time_max = U32_MAX;
+	s->s_d_op = NULL;
 	root_inode = sidongfs_iget(s, SIDONGFS_ROOT_INO);
 	if (IS_ERR(root_inode)) {
 		printk("sidongfs: sidongfs_iget failed\n");
+		kfree(sbi);
+		s->s_fs_info = NULL;
 		return PTR_ERR(root_inode);
 	}
 
 	s->s_root = d_make_root(root_inode);
 	if (!s->s_root) {
+		kfree(sbi);
+		s->s_fs_info = NULL;
 		printk("sidongfs: get root inode failed\n");
+		return -ENOMEM;
 	}
 
 	return 0;
@@ -220,7 +226,7 @@ MODULE_ALIAS_FS("sidongfs");
 int __init sidongfs_module_init(void)
 {
 	int err;
-	
+
 	printk("Sidongfs Module!\n");
 	err = init_inodecache();
 	if (err)
@@ -247,10 +253,10 @@ static void destroy_inodecache(void)
 void __exit sidongfs_module_cleanup(void)
 {
 	unregister_filesystem(&sidongfs_type);
-	destroy_inodecache();	
+	destroy_inodecache();
 	printk("Bye sidongfs Module!\n");
 }
 
-module_init(sidongfs_module_init); 
-module_exit(sidongfs_module_cleanup); 
+module_init(sidongfs_module_init);
+module_exit(sidongfs_module_cleanup);
 MODULE_LICENSE("GPL");
